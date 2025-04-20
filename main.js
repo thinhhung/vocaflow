@@ -1,9 +1,9 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const dictionaryService = require("./dictionary-service");
-const vocabularyService = require("./vocabulary-service");
-const readingsService = require("./readings-service");
+const dictionaryService = require("./src/services/dictionaryService");
+const vocabularyService = require("./src/services/vocabularyService");
+const readingService = require("./src/services/readingService");
 
 let mainWindow;
 
@@ -70,19 +70,19 @@ app.whenReady().then(() => {
 
   // Set up IPC handlers for readings management
   ipcMain.handle("readings:getAll", async () => {
-    return readingsService.getAllReadings();
+    return readingService.getAllReadings();
   });
 
   ipcMain.handle("readings:saveReading", async (event, readingData) => {
-    return readingsService.addReading(readingData);
+    return readingService.addReading(readingData);
   });
 
   ipcMain.handle("readings:updateReading", async (event, readingData) => {
-    return readingsService.updateReading(readingData);
+    return readingService.updateReading(readingData);
   });
 
   ipcMain.handle("readings:deleteReading", async (event, readingId) => {
-    return readingsService.deleteReading(readingId);
+    return readingService.deleteReading(readingId);
   });
 
   // Set up TTS handler
