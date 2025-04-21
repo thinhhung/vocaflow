@@ -10,6 +10,10 @@ const VocabularyDashboard = () => {
   const [sortOrder, setSortOrder] = useState("desc");
   const [selectedWords, setSelectedWords] = useState([]);
 
+  // Add pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [wordsPerPage, setWordsPerPage] = useState(20);
+
   useEffect(() => {
     const fetchVocabulary = async () => {
       try {
@@ -25,6 +29,11 @@ const VocabularyDashboard = () => {
 
     fetchVocabulary();
   }, []);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchFilter, levelFilter]);
 
   const handleDelete = async (wordId) => {
     if (window.confirm("Are you sure you want to delete this word?")) {
@@ -59,10 +68,10 @@ const VocabularyDashboard = () => {
   };
 
   const handleSelectAll = () => {
-    if (selectedWords.length === filteredAndSortedVocabulary.length) {
+    if (selectedWords.length === paginatedVocabulary.length) {
       setSelectedWords([]);
     } else {
-      setSelectedWords(filteredAndSortedVocabulary.map((word) => word.id));
+      setSelectedWords(paginatedVocabulary.map((word) => word.id));
     }
   };
 
@@ -127,10 +136,11 @@ const VocabularyDashboard = () => {
   };
 
   // First filter by level, then by search term, then sort
-  const filteredAndSortedVocabulary = vocabulary
+  const filteredVocabulary = vocabulary
     .filter((word) => {
       // Level filter
       if (levelFilter === "all") return true;
+      if (levelFilter === "untracked") return !word.level;
       return word.level === levelFilter;
     })
     .filter((word) => {
@@ -157,9 +167,30 @@ const VocabularyDashboard = () => {
       return 0;
     });
 
+  // Calculate pagination
+  const indexOfLastWord = currentPage * wordsPerPage;
+  const indexOfFirstWord = indexOfLastWord - wordsPerPage;
+  const paginatedVocabulary = filteredVocabulary.slice(
+    indexOfFirstWord,
+    indexOfLastWord
+  );
+  const totalPages = Math.ceil(filteredVocabulary.length / wordsPerPage);
+
+  // Page change handler
+  const handlePageChange = (pageNumber) => {
+    setCurrentPage(pageNumber);
+    setSelectedWords([]);
+  };
+
   if (loading)
     return <div className="text-center p-4">Loading vocabulary...</div>;
   if (error) return <div className="text-center text-red-500 p-4">{error}</div>;
+
+  // Count words by level
+  const untrackedCount = vocabulary.filter((w) => !w.level).length;
+  const hardCount = vocabulary.filter((w) => w.level === "hard").length;
+  const familiarCount = vocabulary.filter((w) => w.level === "familiar").length;
+  const knownCount = vocabulary.filter((w) => w.level === "known").length;
 
   return (
     <div className="container mx-auto p-4">
@@ -176,12 +207,22 @@ const VocabularyDashboard = () => {
             All ({vocabulary.length})
           </button>
           <button
+            onClick={() => setLevelFilter("untracked")}
+            className={`px-3 py-1 mr-2 rounded ${
+              levelFilter === "untracked"
+                ? "bg-gray-800 text-white"
+                : "bg-gray-200"
+            }`}
+          >
+            Untracked ({untrackedCount})
+          </button>
+          <button
             onClick={() => setLevelFilter("hard")}
             className={`px-3 py-1 mr-2 rounded ${
               levelFilter === "hard" ? "bg-red-600 text-white" : "bg-red-100"
             }`}
           >
-            Hard ({vocabulary.filter((w) => w.level === "hard").length})
+            Hard ({hardCount})
           </button>
           <button
             onClick={() => setLevelFilter("familiar")}
@@ -191,7 +232,7 @@ const VocabularyDashboard = () => {
                 : "bg-orange-100"
             }`}
           >
-            Familiar ({vocabulary.filter((w) => w.level === "familiar").length})
+            Familiar ({familiarCount})
           </button>
           <button
             onClick={() => setLevelFilter("known")}
@@ -201,7 +242,7 @@ const VocabularyDashboard = () => {
                 : "bg-green-100"
             }`}
           >
-            Known ({vocabulary.filter((w) => w.level === "known").length})
+            Known ({knownCount})
           </button>
         </div>
 
@@ -246,7 +287,7 @@ const VocabularyDashboard = () => {
         </div>
       )}
 
-      {filteredAndSortedVocabulary.length === 0 ? (
+      {filteredVocabulary.length === 0 ? (
         <div className="text-center p-8 text-gray-500">
           {searchFilter || levelFilter !== "all"
             ? "No matching words found."
@@ -261,9 +302,8 @@ const VocabularyDashboard = () => {
                   <input
                     type="checkbox"
                     checked={
-                      filteredAndSortedVocabulary.length > 0 &&
-                      selectedWords.length ===
-                        filteredAndSortedVocabulary.length
+                      paginatedVocabulary.length > 0 &&
+                      selectedWords.length === paginatedVocabulary.length
                     }
                     onChange={handleSelectAll}
                     className="mr-2"
@@ -289,7 +329,7 @@ const VocabularyDashboard = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredAndSortedVocabulary.map((word) => (
+              {paginatedVocabulary.map((word) => (
                 <tr key={word.id} className="border-t hover:bg-gray-50">
                   <td className="px-4 py-2">
                     <input
@@ -319,10 +359,12 @@ const VocabularyDashboard = () => {
                           ? "px-2 py-1 bg-red-100 text-red-800 rounded-full text-sm"
                           : word.level === "familiar"
                           ? "px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-sm"
-                          : "px-2 py-1 bg-green-100 text-green-800 rounded-full text-sm"
+                          : word.level === "known"
+                          ? "px-2 py-1 bg-green-100 text-green-800 rounded-full text-sm"
+                          : "px-2 py-1 bg-gray-100 text-gray-800 rounded-full text-sm"
                       }
                     >
-                      {word.level || "unknown"}
+                      {word.level || "untracked"}
                     </span>
                   </td>
                   <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
@@ -342,6 +384,79 @@ const VocabularyDashboard = () => {
               ))}
             </tbody>
           </table>
+
+          {/* Add pagination controls */}
+          <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200">
+            <div>
+              <p className="text-sm text-gray-700">
+                Showing{" "}
+                <span className="font-medium">{indexOfFirstWord + 1}</span> to{" "}
+                <span className="font-medium">
+                  {Math.min(indexOfLastWord, filteredVocabulary.length)}
+                </span>{" "}
+                of{" "}
+                <span className="font-medium">{filteredVocabulary.length}</span>{" "}
+                results
+              </p>
+            </div>
+            <div>
+              <nav className="relative z-0 inline-flex shadow-sm -space-x-px">
+                <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className={`relative inline-flex items-center px-2 py-2 rounded-l-md border ${
+                    currentPage === 1
+                      ? "bg-gray-100 text-gray-400"
+                      : "bg-white text-gray-500 hover:bg-gray-50"
+                  } text-sm font-medium`}
+                >
+                  Previous
+                </button>
+
+                {/* Generate page buttons */}
+                {[...Array(totalPages).keys()].map((number) => (
+                  <button
+                    key={number + 1}
+                    onClick={() => handlePageChange(number + 1)}
+                    className={`relative inline-flex items-center px-4 py-2 border ${
+                      currentPage === number + 1
+                        ? "bg-blue-50 border-blue-500 text-blue-600"
+                        : "bg-white text-gray-700 hover:bg-gray-50"
+                    } text-sm font-medium`}
+                  >
+                    {number + 1}
+                  </button>
+                ))}
+
+                <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className={`relative inline-flex items-center px-2 py-2 rounded-r-md border ${
+                    currentPage === totalPages
+                      ? "bg-gray-100 text-gray-400"
+                      : "bg-white text-gray-500 hover:bg-gray-50"
+                  } text-sm font-medium`}
+                >
+                  Next
+                </button>
+              </nav>
+            </div>
+            <div>
+              <select
+                value={wordsPerPage}
+                onChange={(e) => {
+                  setWordsPerPage(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="border border-gray-300 rounded px-2 py-1 text-sm"
+              >
+                <option value={10}>10 per page</option>
+                <option value={20}>20 per page</option>
+                <option value={50}>50 per page</option>
+                <option value={100}>100 per page</option>
+              </select>
+            </div>
+          </div>
         </div>
       )}
     </div>

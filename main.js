@@ -51,6 +51,19 @@ if (!vocabularyService.getAllVocabulary) {
   };
 }
 
+// Reading Progress folder and file management
+function getReadingProgressDir() {
+  return path.join(app.getPath("userData"), "readingProgress");
+}
+
+function ensureReadingProgressDir() {
+  const dir = getReadingProgressDir();
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
 let mainWindow;
 
 function createWindow() {
@@ -210,6 +223,41 @@ app.whenReady().then(() => {
     });
     return result;
   });
+
+  // Add reading progress handlers
+  ipcMain.handle("get-reading-progress", async (event, readingId) => {
+    try {
+      const progressDir = ensureReadingProgressDir();
+      const progressPath = path.join(progressDir, `${readingId}.json`);
+
+      if (fs.existsSync(progressPath)) {
+        const data = fs.readFileSync(progressPath, "utf-8");
+        return JSON.parse(data);
+      } else {
+        // Return default progress if no file exists yet
+        return { completedPages: [], lastPage: 1 };
+      }
+    } catch (error) {
+      console.error("Error in get-reading-progress:", error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle(
+    "save-reading-progress",
+    async (event, readingId, progress) => {
+      try {
+        const progressDir = ensureReadingProgressDir();
+        const progressPath = path.join(progressDir, `${readingId}.json`);
+
+        fs.writeFileSync(progressPath, JSON.stringify(progress, null, 2));
+        return { success: true };
+      } catch (error) {
+        console.error("Error in save-reading-progress:", error);
+        throw error;
+      }
+    }
+  );
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -46,4 +46,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // Dialog utilities
   selectFolder: () => ipcRenderer.invoke("dialog:selectFolder"),
+
+  // Reading progress methods
+  getReadingProgress: (readingId) =>
+    ipcRenderer.invoke("get-reading-progress", readingId),
+  saveReadingProgress: (readingId, progress) =>
+    ipcRenderer.invoke("save-reading-progress", readingId, progress),
 });

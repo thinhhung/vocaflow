@@ -52,12 +52,39 @@ class VocabularyService {
         (item) => item.word && item.word.toLowerCase() === normalizedWord
       );
 
+      // Extract context sentence if available
+      const contextSentence = wordData.contextSentence || null;
+
+      // If there's a context sentence, add it to exampleSentences
+      const updatedWordData = { ...wordData };
+      if (contextSentence) {
+        updatedWordData.exampleSentences = [
+          ...(updatedWordData.exampleSentences || []),
+        ];
+
+        // Only add the context sentence if it's not already in the examples
+        if (!updatedWordData.exampleSentences.includes(contextSentence)) {
+          updatedWordData.exampleSentences.unshift(contextSentence);
+        }
+      }
+
       // If the word already exists, update it instead of adding a duplicate
       if (existingWord) {
+        // Merge example sentences without duplicates
+        if (existingWord.exampleSentences && updatedWordData.exampleSentences) {
+          const uniqueSentences = [
+            ...new Set([
+              ...updatedWordData.exampleSentences,
+              ...(existingWord.exampleSentences || []),
+            ]),
+          ];
+          updatedWordData.exampleSentences = uniqueSentences;
+        }
+
         // Preserve the existing ID and dateAdded
         const updatedWord = {
           ...existingWord,
-          ...wordData,
+          ...updatedWordData,
           id: existingWord.id,
           dateAdded: existingWord.dateAdded,
           dateModified: new Date().toISOString(),
@@ -74,7 +101,7 @@ class VocabularyService {
 
       // Otherwise, add as a new word
       const newWord = {
-        ...wordData,
+        ...updatedWordData,
         id: uuidv4(),
         dateAdded: new Date().toISOString(),
       };

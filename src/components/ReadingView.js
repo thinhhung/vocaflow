@@ -15,6 +15,12 @@ const ReadingView = () => {
   const [debugMode, setDebugMode] = useState(false);
   const contentRef = useRef(null);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [completedPages, setCompletedPages] = useState([]);
+  const [wordsInCurrentPage, setWordsInCurrentPage] = useState([]);
+
   useEffect(() => {
     const loadVocabularyAndReadings = async () => {
       try {
@@ -34,6 +40,22 @@ const ReadingView = () => {
         if (foundReading) {
           setReading(foundReading);
           setLoading(false);
+
+          // Split content into pages if it's longer than a threshold
+          const paginated = paginateContent(foundReading.content);
+          setTotalPages(paginated.length);
+
+          // Load completed pages from storage
+          try {
+            const progress = await window.electronAPI.getReadingProgress(
+              readingId
+            );
+            if (progress && progress.completedPages) {
+              setCompletedPages(progress.completedPages);
+            }
+          } catch (err) {
+            console.error("Error loading reading progress:", err);
+          }
         } else {
           setError("Reading not found");
           setLoading(false);
@@ -84,6 +106,36 @@ const ReadingView = () => {
     setForceUpdateKey((prev) => prev + 1);
   }, [vocabulary]);
 
+  useEffect(() => {
+    if (reading && reading.content) {
+      const pages = paginateContent(reading.content);
+      if (currentPage <= pages.length) {
+        const pageContent = pages[currentPage - 1];
+        const words = extractWords(pageContent);
+        setWordsInCurrentPage(words);
+      }
+    }
+  }, [reading, currentPage]);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      // Arrow Right - Next Page
+      if (event.key === "ArrowRight") {
+        navigateToPage(currentPage + 1);
+      }
+      // Arrow Left - Previous Page
+      else if (event.key === "ArrowLeft") {
+        navigateToPage(currentPage - 1);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [currentPage, totalPages]);
+
   const getWordLevel = (word) => {
     if (!word || word.length < 2) return null;
 
@@ -93,6 +145,142 @@ const ReadingView = () => {
     );
 
     return vocabEntry ? vocabEntry.level : null;
+  };
+
+  const paginateContent = (content) => {
+    if (!content) return [""];
+
+    // For shorter content, just return a single page
+    if (content.length < 3000) return [content];
+
+    // For longer content, split by markdown headings or paragraph groups
+    const pages = [];
+    const sections = content.split(/(?=^#{1,2}\s)/m);
+
+    let currentPage = "";
+    for (const section of sections) {
+      if ((currentPage + section).length > 4000 && currentPage.length > 0) {
+        pages.push(currentPage);
+        currentPage = section;
+      } else {
+        currentPage += section;
+      }
+    }
+
+    if (currentPage.length > 0) {
+      pages.push(currentPage);
+    }
+
+    return pages.length > 0 ? pages : [content];
+  };
+
+  const extractWords = (content) => {
+    if (!content) return [];
+
+    // Remove markdown formatting, code blocks, and special characters
+    const cleanText = content
+      .replace(/```[\s\S]*?```/g, "") // Remove code blocks
+      .replace(/`[^`]*`/g, "") // Remove inline code
+      .replace(/\[.*?\]\(.*?\)/g, "") // Remove links
+      .replace(/[#*_~>]/g, "") // Remove formatting chars
+      .replace(/[.,;:!?()[\]{}""'']/g, " "); // Replace punctuation with spaces
+
+    // Split into words and filter
+    const words = cleanText
+      .split(/\s+/)
+      .filter((word) => word.length > 1)
+      .map((word) => word.toLowerCase())
+      .filter((word) => !/^\d+$/.test(word)); // Remove numbers-only items
+
+    // Return unique words
+    return [...new Set(words)];
+  };
+
+  const markPageAsCompleted = async () => {
+    if (completedPages.includes(currentPage)) {
+      return; // Already completed
+    }
+
+    // Add untracked words to vocabulary
+    const untrackedWords = wordsInCurrentPage.filter((word) => {
+      const existingWord = vocabulary.find(
+        (v) => v.word?.toLowerCase() === word.toLowerCase()
+      );
+      return !existingWord; // Word is not in vocabulary
+    });
+
+    // Add untracked words to vocabulary as "untracked"
+    for (const word of untrackedWords) {
+      try {
+        const wordData = {
+          word,
+          level: null, // untracked level
+          dateAdded: new Date().toISOString(),
+        };
+
+        await window.electronAPI.saveWord(wordData);
+        console.log(`Added untracked word: ${word}`);
+      } catch (err) {
+        console.error(`Error adding word ${word}:`, err);
+      }
+    }
+
+    // Update completed pages
+    const updatedCompletedPages = [...completedPages, currentPage];
+    setCompletedPages(updatedCompletedPages);
+
+    // Save progress
+    try {
+      await window.electronAPI.saveReadingProgress(readingId, {
+        completedPages: updatedCompletedPages,
+        lastPage: currentPage,
+        lastAccessed: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error("Error saving reading progress:", err);
+    }
+
+    // Refresh vocabulary list
+    await refreshVocabulary();
+  };
+
+  const navigateToPage = async (pageNum) => {
+    // Check if we're at the last page and trying to go forward
+    if (pageNum > totalPages) {
+      await markPageAsCompleted(); // Mark current page as complete
+
+      // Mark reading as complete in reading progress
+      try {
+        await window.electronAPI.saveReadingProgress(readingId, {
+          completedPages: [...completedPages, currentPage],
+          lastPage: currentPage,
+          lastAccessed: new Date().toISOString(),
+          isCompleted: true,
+          completedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.error("Error marking reading as complete:", err);
+      }
+
+      setShowCompletionModal(true); // Show completion modal
+      return;
+    }
+
+    // Check if we're at the first page and trying to go back
+    if (pageNum < 1) {
+      return; // Do nothing
+    }
+
+    // Mark current page as complete before moving to next page
+    if (pageNum > currentPage) {
+      await markPageAsCompleted();
+    }
+
+    // Navigate to the page
+    setCurrentPage(pageNum);
+
+    // Scroll to top
+    window.scrollTo(0, 0);
   };
 
   const processWords = (text) => {
@@ -159,10 +347,8 @@ const ReadingView = () => {
             } else if (level === "familiar") {
               style =
                 "background-color:#ffedd5;color:#9a3412;padding:0 2px;border-radius:3px;cursor:pointer;display:inline-block;";
-            } else if (level === "known") {
-              style =
-                "background-color:#dcfce7;color:#166534;padding:0 2px;border-radius:3px;cursor:pointer;display:inline-block;";
             } else {
+              // Known and untracked words have no special styling
               style = "cursor:pointer;display:inline-block;";
             }
 
@@ -199,10 +385,8 @@ const ReadingView = () => {
         } else if (level === "familiar") {
           style =
             "background-color:#ffedd5;color:#9a3412;padding:0 2px;border-radius:3px;cursor:pointer;display:inline-block;";
-        } else if (level === "known") {
-          style =
-            "background-color:#dcfce7;color:#166534;padding:0 2px;border-radius:3px;cursor:pointer;display:inline-block;";
         } else {
+          // Known and untracked words have no special styling
           style = "cursor:pointer;display:inline-block;";
         }
 
@@ -826,6 +1010,91 @@ const ReadingView = () => {
     );
   };
 
+  const renderPagination = () => {
+    // Changed condition to ensure pagination shows when content is paginated
+    if (!reading || !reading.content) return null;
+
+    return (
+      <div className="flex justify-between items-center mt-8 mb-6">
+        <button
+          onClick={() => navigateToPage(currentPage - 1)}
+          disabled={currentPage === 1}
+          className={`flex items-center px-4 py-2 rounded ${
+            currentPage === 1
+              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+              : "bg-blue-500 text-white hover:bg-blue-600"
+          }`}
+        >
+          <span className="mr-2">←</span> Previous Page
+        </button>
+
+        <div className="text-gray-600">
+          Page {currentPage} of {totalPages}
+          {completedPages.includes(currentPage) && (
+            <span className="ml-2 text-green-600">✓</span>
+          )}
+        </div>
+
+        <button
+          onClick={() => navigateToPage(currentPage + 1)}
+          className="flex items-center px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          {currentPage === totalPages ? "Complete Reading" : "Next Page"}{" "}
+          <span className="ml-2">→</span>
+        </button>
+      </div>
+    );
+  };
+
+  // Replace the modal with an in-page congratulation section
+  const renderCompletionSection = () => {
+    if (!showCompletionModal) return null;
+
+    return (
+      <div className="bg-white p-8 rounded-lg shadow-xl border-2 border-green-500 mt-8 mb-4">
+        <div className="flex flex-col items-center">
+          <div className="text-green-600 mb-4">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-16 w-16"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold mb-4 text-green-600 text-center">
+            Congratulations!
+          </h2>
+          <p className="mb-6 text-center">
+            You've completed reading "{reading.title}"! All words have been
+            added to your vocabulary tracker for future learning.
+          </p>
+          <div className="flex flex-col md:flex-row justify-center gap-4">
+            <button
+              onClick={() => navigate("/readings")}
+              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+            >
+              Back to Readings
+            </button>
+            <button
+              onClick={() => navigate("/vocabulary")}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              View Vocabulary
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (loading) {
     return <div className="container mx-auto p-4">Loading...</div>;
   }
@@ -848,6 +1117,10 @@ const ReadingView = () => {
     );
   }
 
+  const paginatedContent = paginateContent(reading.content);
+  const currentPageContent =
+    paginatedContent[currentPage - 1] || reading.content;
+
   return (
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-4">
@@ -867,6 +1140,8 @@ const ReadingView = () => {
 
       {process.env.NODE_ENV === "development" && renderDebugTools()}
 
+      {renderPagination()}
+
       <div className="bg-white rounded-lg shadow-md overflow-hidden mb-6">
         <div className="p-6">
           <h1 className="text-3xl font-bold mb-2">{reading.title}</h1>
@@ -874,6 +1149,7 @@ const ReadingView = () => {
             {reading.source && `Source: ${reading.source}`}
             {reading.source && " • "}
             Last updated: {new Date(reading.updatedAt).toLocaleDateString()}
+            {totalPages > 1 && ` • Page ${currentPage} of ${totalPages}`}
           </p>
 
           <div
@@ -884,15 +1160,18 @@ const ReadingView = () => {
           >
             <ReactMarkdown
               components={customRenderers}
-              key={`markdown-${readingId}-${forceUpdateKey}`}
+              key={`markdown-${readingId}-${currentPage}-${forceUpdateKey}`}
               skipHtml={false}
               unwrapDisallowed={false}
             >
-              {reading.content}
+              {currentPageContent}
             </ReactMarkdown>
           </div>
         </div>
       </div>
+
+      {renderPagination()}
+      {renderCompletionSection()}
 
       <style jsx="true">{`
         .reading-content .vocab-word {
