@@ -99,6 +99,33 @@ const VocabularyDashboard = () => {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (selectedWords.length === 0) return;
+
+    if (
+      window.confirm(
+        `Are you sure you want to delete ${selectedWords.length} selected word(s)?`
+      )
+    ) {
+      try {
+        for (const wordId of selectedWords) {
+          await window.electronAPI.deleteWord(wordId);
+        }
+
+        // Remove deleted words from the vocabulary state
+        setVocabulary((prev) =>
+          prev.filter((word) => !selectedWords.includes(word.id))
+        );
+
+        // Clear selection
+        setSelectedWords([]);
+      } catch (error) {
+        console.error("Error deleting words:", error);
+        setError("Failed to delete words. Please try again.");
+      }
+    }
+  };
+
   // First filter by level, then by search term, then sort
   const filteredAndSortedVocabulary = vocabulary
     .filter((word) => {
@@ -190,7 +217,7 @@ const VocabularyDashboard = () => {
       </div>
 
       {selectedWords.length > 0 && (
-        <div className="mb-4 bg-gray-100 p-2 rounded flex items-center">
+        <div className="mb-4 bg-gray-100 p-2 rounded flex items-center flex-wrap">
           <span className="mr-2">{selectedWords.length} words selected:</span>
           <button
             onClick={() => handleBulkChange("hard")}
@@ -209,6 +236,12 @@ const VocabularyDashboard = () => {
             className="px-3 py-1 mr-2 bg-green-500 text-white rounded"
           >
             Mark Known
+          </button>
+          <button
+            onClick={handleBulkDelete}
+            className="px-3 py-1 bg-red-600 text-white rounded ml-auto"
+          >
+            Delete Selected
           </button>
         </div>
       )}

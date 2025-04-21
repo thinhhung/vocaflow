@@ -45,6 +45,34 @@ class VocabularyService {
   addWord(wordData) {
     try {
       const vocabulary = this.getAllVocabulary();
+
+      // Check if word already exists (case insensitive comparison)
+      const normalizedWord = wordData.word.toLowerCase();
+      const existingWord = vocabulary.find(
+        (item) => item.word && item.word.toLowerCase() === normalizedWord
+      );
+
+      // If the word already exists, update it instead of adding a duplicate
+      if (existingWord) {
+        // Preserve the existing ID and dateAdded
+        const updatedWord = {
+          ...existingWord,
+          ...wordData,
+          id: existingWord.id,
+          dateAdded: existingWord.dateAdded,
+          dateModified: new Date().toISOString(),
+        };
+
+        // Replace the existing word with the updated one
+        const index = vocabulary.findIndex(
+          (item) => item.id === existingWord.id
+        );
+        vocabulary[index] = updatedWord;
+        fs.writeFileSync(this.vocabularyFilePath, JSON.stringify(vocabulary));
+        return updatedWord;
+      }
+
+      // Otherwise, add as a new word
       const newWord = {
         ...wordData,
         id: uuidv4(),
