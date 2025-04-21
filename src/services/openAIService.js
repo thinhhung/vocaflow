@@ -1,4 +1,4 @@
-import { getSettings } from "./settingsService";
+import { getSettings } from "./settingsService.js";
 
 export class OpenAIService {
   constructor() {

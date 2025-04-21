@@ -1,21 +1,23 @@
+// Use CommonJS style require for Electron
 const { contextBridge, ipcRenderer } = require("electron");
 
-// Expose selected APIs from the main process to the renderer process
+// Expose protected methods that allow the renderer process to use
+// the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld("electronAPI", {
-  // Dictionary related functions
+  // Dictionary functions
   lookupWord: (word) => ipcRenderer.invoke("dictionary:lookupWord", word),
   translateText: (text, fromLang, toLang) =>
     ipcRenderer.invoke("translate:translateText", text, fromLang, toLang),
 
   // Vocabulary management
-  getVocabulary: () => ipcRenderer.invoke("vocabulary:getAll"),
+  getAllVocabulary: () => ipcRenderer.invoke("vocabulary:getAll"),
   saveWord: (wordData) => ipcRenderer.invoke("vocabulary:saveWord", wordData),
   updateWord: (wordData) =>
     ipcRenderer.invoke("vocabulary:updateWord", wordData),
   deleteWord: (wordId) => ipcRenderer.invoke("vocabulary:deleteWord", wordId),
 
-  // Reading management
-  getReadings: () => ipcRenderer.invoke("readings:getAll"),
+  // Readings management
+  getAllReadings: () => ipcRenderer.invoke("readings:getAll"),
   saveReading: (readingData) =>
     ipcRenderer.invoke("readings:saveReading", readingData),
   updateReading: (readingData) =>
@@ -24,5 +26,24 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("readings:deleteReading", readingId),
 
   // Text-to-speech
-  speakText: (text) => ipcRenderer.invoke("tts:speak", text),
+  speak: (text) => ipcRenderer.invoke("tts:speak", text),
+
+  // Filesystem access
+  readFile: (filepath, options) =>
+    ipcRenderer.invoke("fs:readFile", filepath, options),
+  writeFile: (filepath, data, options) =>
+    ipcRenderer.invoke("fs:writeFile", filepath, data, options),
+  fileExists: (filepath) => ipcRenderer.invoke("fs:exists", filepath),
+  createDirectory: (dirPath, options) =>
+    ipcRenderer.invoke("fs:mkdir", dirPath, options),
+
+  // Path utilities
+  joinPath: (...args) => ipcRenderer.invoke("path:join", ...args),
+  getDirname: (filepath) => ipcRenderer.invoke("path:dirname", filepath),
+
+  // App utilities
+  getPath: (name) => ipcRenderer.invoke("app:getPath", name),
+
+  // Dialog utilities
+  selectFolder: () => ipcRenderer.invoke("dialog:selectFolder"),
 });

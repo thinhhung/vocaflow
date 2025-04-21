@@ -1,9 +1,55 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
-const path = require("path");
-const fs = require("fs");
-const dictionaryService = require("./src/services/dictionaryService");
-const vocabularyService = require("./src/services/vocabularyService");
-const readingService = require("./src/services/readingService");
+import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
+// Initialize @electron/remote
+import {
+  initialize,
+  enable as enableRemote,
+} from "@electron/remote/main/index.js";
+initialize();
+
+// Get directory name in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Import services - use named imports instead of default imports
+import dictionaryService from "./src/services/dictionaryService.js";
+import { vocabularyService } from "./src/services/vocabularyService.js";
+import { readingService } from "./src/services/readingService.js";
+
+// Debug logging to troubleshoot service methods
+console.log("Reading service methods:", Object.keys(readingService));
+console.log("Vocabulary service methods:", Object.keys(vocabularyService));
+
+// Make sure required methods exist, otherwise create them
+if (!readingService.getAllReadings) {
+  console.error(
+    "WARNING: readingService.getAllReadings not found, creating fallback"
+  );
+  readingService.getAllReadings = function () {
+    console.log("Using fallback getAllReadings method");
+    if (this.initializeReadingsFile && this.readingsFilePath) {
+      this.initializeReadingsFile();
+      const readingsData = fs.readFileSync(this.readingsFilePath, "utf-8");
+      return JSON.parse(readingsData);
+    }
+    return [];
+  };
+}
+
+if (!vocabularyService.getAllVocabulary) {
+  console.error(
+    "WARNING: vocabularyService.getAllVocabulary not found, creating fallback"
+  );
+  vocabularyService.getAllVocabulary = function () {
+    console.log("Using fallback getAllVocabulary method");
+    if (this.store) {
+      return this.store.get("vocabulary");
+    }
+    return [];
+  };
+}
 
 let mainWindow;
 
@@ -12,11 +58,15 @@ function createWindow() {
     width: 1200,
     height: 800,
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "preload.js"), // Keep using preload.js
       contextIsolation: true,
-      nodeIntegration: false,
+      nodeIntegration: true, // Enable Node.js integration
+      enableRemoteModule: true, // Enable remote module
     },
   });
+
+  // Enable remote module for this window
+  enableRemote(mainWindow.webContents);
 
   mainWindow.loadFile("index.html");
 
@@ -102,6 +152,63 @@ app.whenReady().then(() => {
     `);
 
     return { success: true };
+  });
+
+  // Set up Node.js filesystem access handlers
+  ipcMain.handle("fs:readFile", async (event, filepath, options) => {
+    try {
+      return await fs.promises.readFile(filepath, options);
+    } catch (error) {
+      console.error("Error reading file:", error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle("fs:writeFile", async (event, filepath, data, options) => {
+    try {
+      await fs.promises.writeFile(filepath, data, options);
+      return true;
+    } catch (error) {
+      console.error("Error writing file:", error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle("fs:exists", (event, filepath) => {
+    return fs.existsSync(filepath);
+  });
+
+  ipcMain.handle("fs:mkdir", async (event, dirPath, options) => {
+    try {
+      await fs.promises.mkdir(dirPath, options);
+      return true;
+    } catch (error) {
+      console.error("Error creating directory:", error);
+      throw error;
+    }
+  });
+
+  // Set up path utility handlers
+  ipcMain.handle("path:join", (event, ...args) => {
+    return path.join(...args);
+  });
+
+  ipcMain.handle("path:dirname", (event, filepath) => {
+    return path.dirname(filepath);
+  });
+
+  // Set up app utility handlers
+  ipcMain.handle("app:getPath", (event, name) => {
+    return app.getPath(name);
+  });
+
+  // Add dialog handler for selecting folder
+  ipcMain.handle("dialog:selectFolder", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ["openDirectory"],
+      title: "Select Folder for VocaFlow Data",
+    });
+    return result;
   });
 
   app.on("activate", () => {

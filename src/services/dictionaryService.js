@@ -22,8 +22,8 @@
  *   this software without specific prior written permission.
  */
 
-const puppeteer = require("puppeteer");
-const cheerio = require("cheerio");
+import puppeteer from "puppeteer";
+import * as cheerio from "cheerio";
 
 class DictionaryService {
   constructor() {
@@ -374,4 +374,4 @@ class DictionaryService {
   }
 }
 
-module.exports = new DictionaryService();
+export default new DictionaryService();

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 
-export const WordPopup = ({ word, onClose, onSave }) => {
+const WordPopup = ({ word, onClose, onSave }) => {
   const [definition, setDefinition] = useState("");
   const [partOfSpeech, setPartOfSpeech] = useState("");
   const [examples, setExamples] = useState([]);
@@ -34,7 +34,7 @@ export const WordPopup = ({ word, onClose, onSave }) => {
   }, [word]);
 
   const handleSpeakText = () => {
-    window.electronAPI.speakText(word);
+    window.electronAPI.speak(word);
   };
 
   return (
@@ -140,3 +140,5 @@ export const WordPopup = ({ word, onClose, onSave }) => {
     </div>
   );
 };
+
+export default WordPopup;

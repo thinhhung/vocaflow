@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
-import { WordPopup } from "./WordPopup";
+import WordPopup from "./WordPopup.js";
 
-export const ReadingsList = () => {
+const ReadingsList = () => {
   const [readings, setReadings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [previewReadingId, setPreviewReadingId] = useState(null);
@@ -16,8 +16,8 @@ export const ReadingsList = () => {
     const loadData = async () => {
       try {
         const [loadedReadings, vocab] = await Promise.all([
-          window.electronAPI.getReadings(),
-          window.electronAPI.getVocabulary(),
+          window.electronAPI.getAllReadings(),
+          window.electronAPI.getAllVocabulary(),
         ]);
         setReadings(loadedReadings);
         setVocabulary(vocab);
@@ -257,8 +257,10 @@ export const ReadingsList = () => {
               <div className="p-4">
                 <h3 className="text-xl font-semibold mb-1">{reading.title}</h3>
                 <p className="text-gray-500 text-sm mb-2">
-                  {new Date(reading.updatedAt).toLocaleDateString()} -{" "}
-                  {reading.source || "No source"}
+                  {new Date(
+                    reading.updatedAt || reading.dateAdded
+                  ).toLocaleDateString()}{" "}
+                  - {reading.source || "No source"}
                 </p>
 
                 {previewReadingId === reading.id ? (
@@ -383,3 +385,5 @@ export const ReadingsList = () => {
     </div>
   );
 };
+
+export default ReadingsList;

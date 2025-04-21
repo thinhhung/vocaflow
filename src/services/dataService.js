@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { getDataFilePath } from "./settingsService";
+import { getDataFilePath } from "./settingsService.js";
 
 // Save vocabulary data to the configured location
 export const saveVocabularyData = async (data) => {

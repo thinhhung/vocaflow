@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 
-export const ReadingForm = ({ isEditing = false }) => {
+const ReadingForm = ({ isEditing = false }) => {
   const navigate = useNavigate();
   const { readingId } = useParams();
   const [title, setTitle] = useState("");
@@ -17,7 +17,7 @@ export const ReadingForm = ({ isEditing = false }) => {
     if (isEditing && readingId) {
       const loadReading = async () => {
         try {
-          const readings = await window.electronAPI.getReadings();
+          const readings = await window.electronAPI.getAllReadings();
           const reading = readings.find((r) => r.id === readingId);
 
           if (reading) {
@@ -177,3 +177,5 @@ export const ReadingForm = ({ isEditing = false }) => {
     </div>
   );
 };
+
+export default ReadingForm;

@@ -1,13 +1,14 @@
 import React from "react";
 import * as ReactDOM from "react-dom/client";
 import { HashRouter, Routes, Route, Link, Navigate } from "react-router-dom";
-import {
-  WordPopup,
-  VocabularyDashboard,
-  ReadingsList,
-  ReadingForm,
-  ReadingView,
-} from "./components";
+
+// Import components individually from their files instead of from a directory
+import WordPopup from "./components/WordPopup.js";
+import VocabularyDashboard from "./components/VocabularyDashboard.js";
+import ReadingsList from "./components/ReadingsList.js";
+import ReadingForm from "./components/ReadingForm.js";
+import ReadingView from "./components/ReadingView.js";
+import { SettingsView } from "./components/SettingsView.js";
 
 const App = () => {
   return (
@@ -19,8 +20,11 @@ const App = () => {
             <Link to="/readings" className="mr-4 text-white hover:underline">
               My Readings
             </Link>
-            <Link to="/dashboard" className="text-white hover:underline">
+            <Link to="/dashboard" className="mr-4 text-white hover:underline">
               Vocabulary Dashboard
+            </Link>
+            <Link to="/settings" className="text-white hover:underline">
+              Settings
             </Link>
           </nav>
         </header>
@@ -35,6 +39,7 @@ const App = () => {
               element={<ReadingForm isEditing={true} />}
             />
             <Route path="/dashboard" element={<VocabularyDashboard />} />
+            <Route path="/settings" element={<SettingsView />} />
           </Routes>
         </main>
       </div>

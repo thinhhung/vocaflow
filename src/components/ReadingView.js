@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { WordPopup } from "./WordPopup";
+import WordPopup from "./WordPopup.js"; // Added .js extension
 import ReactMarkdown from "react-markdown";
 
-export const ReadingView = () => {
+const ReadingView = () => {
   const { readingId } = useParams();
   const navigate = useNavigate();
   const [reading, setReading] = useState(null);
@@ -12,13 +12,14 @@ export const ReadingView = () => {
   const [selectedWord, setSelectedWord] = useState(null);
   const [vocabulary, setVocabulary] = useState([]);
   const [forceUpdateKey, setForceUpdateKey] = useState(0);
+  const [debugMode, setDebugMode] = useState(false);
   const contentRef = useRef(null);
 
   useEffect(() => {
     const loadVocabularyAndReadings = async () => {
       try {
         console.log("Loading vocabulary from API...");
-        const vocab = await window.electronAPI.getVocabulary();
+        const vocab = await window.electronAPI.getAllVocabulary();
         console.log(`Loaded ${vocab.length} vocabulary words`);
 
         if (vocab.length > 0) {
@@ -27,7 +28,7 @@ export const ReadingView = () => {
 
         setVocabulary(vocab);
 
-        const readings = await window.electronAPI.getReadings();
+        const readings = await window.electronAPI.getAllReadings();
         const foundReading = readings.find((r) => r.id === readingId);
 
         if (foundReading) {
@@ -45,25 +46,6 @@ export const ReadingView = () => {
     };
 
     loadVocabularyAndReadings();
-
-    const hotReloadListener = () => {
-      console.log("Hot reload triggered, refreshing data...");
-      loadVocabularyAndReadings();
-    };
-
-    window.addEventListener("hot-reload", hotReloadListener);
-
-    const isDev = process.env.NODE_ENV === "development";
-    let intervalId;
-
-    if (isDev) {
-      intervalId = setInterval(loadVocabularyAndReadings, 5000);
-    }
-
-    return () => {
-      window.removeEventListener("hot-reload", hotReloadListener);
-      if (intervalId) clearInterval(intervalId);
-    };
   }, [readingId]);
 
   useEffect(() => {
@@ -72,6 +54,28 @@ export const ReadingView = () => {
     };
     return () => {
       delete window.selectedWordHandler;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleDocumentClick = (e) => {
+      const vocabElement = e.target.closest(".vocab-word");
+
+      if (vocabElement) {
+        const word = vocabElement.dataset.word;
+        if (word) {
+          console.log(`Word clicked: "${word}"`);
+          setSelectedWord(word);
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    };
+
+    document.addEventListener("click", handleDocumentClick, true);
+
+    return () => {
+      document.removeEventListener("click", handleDocumentClick, true);
     };
   }, []);
 
@@ -94,15 +98,94 @@ export const ReadingView = () => {
   const processWords = (text) => {
     if (!text || typeof text !== "string") return text;
 
-    const words = text.split(/(\s+)/);
+    // Check if this is likely a list item that already has a bullet
+    const isBulletedText =
+      text.trim().startsWith("•") ||
+      text.trim().startsWith("-") ||
+      text.trim().match(/^\d+\./) !== null;
+
+    // Preserve Markdown headings by protecting # characters at the beginning of lines
+    let processedText = text;
+    if (text.trim().startsWith("#")) {
+      // Replace # at the beginning of lines with a placeholder
+      processedText = text.replace(/^(#{1,6})\s+/m, "§HEADING§$1 ");
+    }
+
+    // Protect bullet points in list items
+    if (isBulletedText) {
+      processedText = processedText
+        .replace(/^-\s+/m, "§BULLET§- ")
+        .replace(/^\*\s+/m, "§BULLET§* ")
+        .replace(/^(\d+)\.\s+/m, "§BULLET§$1. ");
+    }
+
+    // First, identify and protect hyphenated words
+    const tempHyphenMarker = "§HYPHEN§";
+    processedText = processedText.replace(
+      /(\w+)-(\w+)/g,
+      `$1${tempHyphenMarker}$2`
+    );
+
+    // Enhanced word split regex that keeps special characters as separate tokens
+    const words = processedText.split(/(\s+|\/|\-|–|—|&|\+)/);
 
     return words
       .map((word, i) => {
-        if (/^\s+$/.test(word)) {
+        // Restore any special markers
+        word = word
+          .replace(new RegExp(tempHyphenMarker, "g"), "-")
+          .replace(/§HEADING§/, "")
+          .replace(/§BULLET§/, "");
+
+        // Check if it's just whitespace or separators
+        if (/^[\s\/\-–—&\+]+$/.test(word)) {
           return word;
         }
 
-        const cleanWord = word.replace(/[.,;:!?()[\]{}""''*_`~#]/g, "");
+        // For hyphenated words, clean only the punctuation that isn't the hyphen
+        if (word.includes("-") && /\w+-\w+/.test(word)) {
+          const cleanWord = word.replace(
+            /[.,;:!?()[\]{}""''*_`~#<>\/"–—&\+]/g,
+            ""
+          );
+          if (cleanWord && cleanWord.length >= 2) {
+            // Process hyphenated word as a single vocabulary item
+            const level = getWordLevel(cleanWord);
+
+            let style = "";
+            if (level === "hard") {
+              style =
+                "background-color:#fee2e2;color:#991b1b;padding:0 2px;border-radius:3px;cursor:pointer;display:inline-block;";
+            } else if (level === "familiar") {
+              style =
+                "background-color:#ffedd5;color:#9a3412;padding:0 2px;border-radius:3px;cursor:pointer;display:inline-block;";
+            } else if (level === "known") {
+              style =
+                "background-color:#dcfce7;color:#166534;padding:0 2px;border-radius:3px;cursor:pointer;display:inline-block;";
+            } else {
+              style = "cursor:pointer;display:inline-block;";
+            }
+
+            if (debugMode) {
+              style += "outline: 1px dashed blue;";
+            }
+
+            return `<span 
+              class="vocab-word" 
+              data-word="${cleanWord}" 
+              data-level="${level || "unknown"}" 
+              style="${style}"
+              role="button"
+              tabindex="0"
+            >${word}</span>`;
+          }
+        }
+
+        // Regular word processing for non-hyphenated words
+        const cleanWord = word.replace(
+          /[.,;:!?()[\]{}""''*_`~#<>\/\-–—&\+]/g,
+          ""
+        );
         if (!cleanWord || cleanWord.length < 2) {
           return word;
         }
@@ -112,13 +195,19 @@ export const ReadingView = () => {
         let style = "";
         if (level === "hard") {
           style =
-            "background-color:#fee2e2;color:#991b1b;padding:0 2px;border-radius:3px;";
+            "background-color:#fee2e2;color:#991b1b;padding:0 2px;border-radius:3px;cursor:pointer;display:inline-block;";
         } else if (level === "familiar") {
           style =
-            "background-color:#ffedd5;color:#9a3412;padding:0 2px;border-radius:3px;";
+            "background-color:#ffedd5;color:#9a3412;padding:0 2px;border-radius:3px;cursor:pointer;display:inline-block;";
         } else if (level === "known") {
           style =
-            "background-color:#dcfce7;color:#166534;padding:0 2px;border-radius:3px;";
+            "background-color:#dcfce7;color:#166534;padding:0 2px;border-radius:3px;cursor:pointer;display:inline-block;";
+        } else {
+          style = "cursor:pointer;display:inline-block;";
+        }
+
+        if (debugMode) {
+          style += "outline: 1px dashed blue;";
         }
 
         return `<span 
@@ -126,97 +215,452 @@ export const ReadingView = () => {
           data-word="${cleanWord}" 
           data-level="${level || "unknown"}" 
           style="${style}"
-          onclick="window.handleWordClick('${cleanWord}')"
+          role="button"
+          tabindex="0"
         >${word}</span>`;
       })
       .join("");
   };
 
-  useEffect(() => {
-    window.handleWordClick = (word) => {
-      setSelectedWord(word);
-    };
-    return () => {
-      delete window.handleWordClick;
-    };
-  }, []);
+  const processReactContent = (content) => {
+    if (!content) {
+      return content;
+    }
+
+    if (typeof content === "string") {
+      // Process string content directly
+      const processedHtml = processWords(content);
+      // Return the processed HTML directly without the vocab-text-span wrapper
+      return <span dangerouslySetInnerHTML={{ __html: processedHtml }} />;
+    }
+
+    if (Array.isArray(content)) {
+      // Process each item in array
+      return content.map((item, i) => {
+        return (
+          <React.Fragment key={i}>{processReactContent(item)}</React.Fragment>
+        );
+      });
+    }
+
+    // Handle React elements with their children
+    if (content.props && content.props.children) {
+      // Special case for React elements that might contain HTML or complex structures
+      try {
+        const processedChildren = processReactContent(content.props.children);
+        return React.cloneElement(content, { children: processedChildren });
+      } catch (err) {
+        console.error("Error processing content:", err);
+        // In case of error, return the original content
+        return content;
+      }
+    }
+
+    // Return unchanged if no special processing needed
+    return content;
+  };
 
   const customRenderers = {
-    p: ({ node, ...props }) => {
-      const content = props.children || "";
-      let processedContent;
-
-      if (typeof content === "string") {
-        processedContent = processWords(content);
+    // Process headings to make vocabulary words clickable - using the recursive processor
+    h1: ({ node, children, ...props }) => {
+      if (!children) {
         return (
-          <p
-            className="my-4"
+          <h1
+            className="text-3xl font-bold mt-6 mb-4 vocab-heading"
+            {...props}
+          />
+        );
+      }
+
+      if (typeof children === "string") {
+        const processedContent = processWords(children);
+        return (
+          <h1
+            className="text-3xl font-bold mt-6 mb-4 vocab-heading"
             dangerouslySetInnerHTML={{ __html: processedContent }}
           />
         );
       }
 
-      if (Array.isArray(content)) {
-        processedContent = content.map((item, i) => {
-          if (typeof item === "string") {
+      // Process complex content using the recursive processor
+      const processedChildren = processReactContent(children);
+      return (
+        <h1 className="text-3xl font-bold mt-6 mb-4 vocab-heading">
+          {processedChildren}
+        </h1>
+      );
+    },
+
+    h2: ({ node, children, ...props }) => {
+      if (!children) {
+        return (
+          <h2
+            className="text-2xl font-bold mt-5 mb-3 vocab-heading"
+            {...props}
+          />
+        );
+      }
+
+      if (typeof children === "string") {
+        const processedContent = processWords(children);
+        return (
+          <h2
+            className="text-2xl font-bold mt-5 mb-3 vocab-heading"
+            dangerouslySetInnerHTML={{ __html: processedContent }}
+          />
+        );
+      }
+
+      // Process complex content using the recursive processor
+      const processedChildren = processReactContent(children);
+      return (
+        <h2 className="text-2xl font-bold mt-5 mb-3 vocab-heading">
+          {processedChildren}
+        </h2>
+      );
+    },
+
+    h3: ({ node, children, ...props }) => {
+      if (!children) {
+        return (
+          <h3
+            className="text-xl font-bold mt-4 mb-2 vocab-heading"
+            {...props}
+          />
+        );
+      }
+
+      if (typeof children === "string") {
+        const processedContent = processWords(children);
+        return (
+          <h3
+            className="text-xl font-bold mt-4 mb-2 vocab-heading"
+            dangerouslySetInnerHTML={{ __html: processedContent }}
+          />
+        );
+      }
+
+      // Process complex content using the recursive processor
+      const processedChildren = processReactContent(children);
+      return (
+        <h3 className="text-xl font-bold mt-4 mb-2 vocab-heading">
+          {processedChildren}
+        </h3>
+      );
+    },
+
+    h4: ({ node, children, ...props }) => {
+      if (!children) {
+        return (
+          <h4
+            className="text-lg font-bold mt-3 mb-2 vocab-heading"
+            {...props}
+          />
+        );
+      }
+
+      if (typeof children === "string") {
+        const processedContent = processWords(children);
+        return (
+          <h4
+            className="text-lg font-bold mt-3 mb-2 vocab-heading"
+            dangerouslySetInnerHTML={{ __html: processedContent }}
+          />
+        );
+      }
+
+      // Process complex content using the recursive processor
+      const processedChildren = processReactContent(children);
+      return (
+        <h4 className="text-lg font-bold mt-3 mb-2 vocab-heading">
+          {processedChildren}
+        </h4>
+      );
+    },
+
+    h5: ({ node, children, ...props }) => {
+      if (!children) {
+        return (
+          <h5
+            className="text-base font-bold mt-3 mb-1 vocab-heading"
+            {...props}
+          />
+        );
+      }
+
+      if (typeof children === "string") {
+        const processedContent = processWords(children);
+        return (
+          <h5
+            className="text-base font-bold mt-3 mb-1 vocab-heading"
+            dangerouslySetInnerHTML={{ __html: processedContent }}
+          />
+        );
+      }
+
+      // Process complex content using the recursive processor
+      const processedChildren = processReactContent(children);
+      return (
+        <h5 className="text-base font-bold mt-3 mb-1 vocab-heading">
+          {processedChildren}
+        </h5>
+      );
+    },
+
+    h6: ({ node, children, ...props }) => {
+      if (!children) {
+        return (
+          <h6
+            className="text-sm font-bold mt-3 mb-1 vocab-heading"
+            {...props}
+          />
+        );
+      }
+
+      if (typeof children === "string") {
+        const processedContent = processWords(children);
+        return (
+          <h6
+            className="text-sm font-bold mt-3 mb-1 vocab-heading"
+            dangerouslySetInnerHTML={{ __html: processedContent }}
+          />
+        );
+      }
+
+      // Process complex content using the recursive processor
+      const processedChildren = processReactContent(children);
+      return (
+        <h6 className="text-sm font-bold mt-3 mb-1 vocab-heading">
+          {processedChildren}
+        </h6>
+      );
+    },
+
+    // Improved paragraph handling
+    p: ({ node, children, ...props }) => {
+      if (!children) {
+        return <p className="my-4 vocab-paragraph" {...props} />;
+      }
+
+      if (typeof children === "string") {
+        const processedContent = processWords(children);
+        return (
+          <p
+            className="my-4 vocab-paragraph"
+            dangerouslySetInnerHTML={{ __html: processedContent }}
+          />
+        );
+      }
+
+      // Process complex content using the recursive processor
+      const processedChildren = processReactContent(children);
+      return <p className="my-4 vocab-paragraph">{processedChildren}</p>;
+    },
+
+    // Enhanced list rendering with proper children passing
+    ul: ({ node, children, ...props }) => {
+      // Check if this is a nested list (parent is a list item)
+      const isNested = node.parent && node.parent.tagName === "li";
+
+      // Log for debugging
+      if (process.env.NODE_ENV === "development") {
+        console.log("Rendering UL with children:", children);
+      }
+
+      return (
+        <ul
+          className={`list-disc pl-5 ${isNested ? "my-1" : "my-4"} vocab-ul`}
+          {...props}
+        >
+          {children}
+        </ul>
+      );
+    },
+
+    ol: ({ node, children, ...props }) => {
+      const isNested = node.parent && node.parent.tagName === "li";
+
+      return (
+        <ol
+          className={`list-decimal pl-5 ${isNested ? "my-1" : "my-4"} vocab-ol`}
+          {...props}
+        >
+          {children}
+        </ol>
+      );
+    },
+
+    // Enhanced list item handling that fixes the missing text bug
+    li: ({ node, children, ...props }) => {
+      // Check if this list item contains a nested list
+      const hasNestedList =
+        node.children &&
+        node.children.some(
+          (child) =>
+            child.type === "element" &&
+            (child.tagName === "ul" || child.tagName === "ol")
+        );
+
+      // Debug logging if enabled
+      if (process.env.NODE_ENV === "development" && debugMode) {
+        console.log("List item node:", node);
+      }
+
+      if (!children) {
+        return <li className="ml-2 mb-1 vocab-list-item" {...props} />;
+      }
+
+      // For list items that have both text and nested lists, ensure we capture all the text
+      if (hasNestedList && Array.isArray(children)) {
+        // Group text/inline elements and nested list elements separately
+        const textElements = [];
+        const listElements = [];
+
+        children.forEach((child) => {
+          if (typeof child === "string") {
+            // Process strings as vocabulary
+            const processedHtml = processWords(child);
+            textElements.push(
+              <span
+                key={`text-${textElements.length}`}
+                dangerouslySetInnerHTML={{ __html: processedHtml }}
+              />
+            );
+          } else if (
+            React.isValidElement(child) &&
+            (child.type === "ul" ||
+              child.type === "ol" ||
+              (child.props &&
+                (child.props.className?.includes("vocab-ul") ||
+                  child.props.className?.includes("vocab-ol"))))
+          ) {
+            // Keep list elements separate
+            listElements.push(child);
+          } else {
+            // Other elements like <strong>, <em>, etc.
+            textElements.push(child);
+          }
+        });
+
+        // Render with text first, then the nested list(s)
+        return (
+          <li
+            className={`ml-2 ${
+              hasNestedList ? "mb-0" : "mb-1"
+            } vocab-list-item`}
+          >
+            {textElements.length > 0 && (
+              <div className="list-text">{textElements}</div>
+            )}
+            {listElements.map((list, i) => (
+              <React.Fragment key={`list-${i}`}>{list}</React.Fragment>
+            ))}
+          </li>
+        );
+      }
+
+      // Handle simple string content
+      if (typeof children === "string") {
+        const processedContent = processWords(children);
+        return (
+          <li
+            className="ml-2 mb-1 vocab-list-item"
+            dangerouslySetInnerHTML={{ __html: processedContent }}
+          />
+        );
+      }
+
+      // For array children without nested lists
+      if (Array.isArray(children)) {
+        const processedChildren = children.map((child, i) => {
+          if (typeof child === "string") {
+            const processedHtml = processWords(child);
             return (
               <span
                 key={i}
-                dangerouslySetInnerHTML={{ __html: processWords(item) }}
+                dangerouslySetInnerHTML={{ __html: processedHtml }}
               />
             );
           }
-          return item;
+          return <React.Fragment key={i}>{child}</React.Fragment>;
         });
-        return <p className="my-4">{processedContent}</p>;
+
+        return (
+          <li className="ml-2 mb-1 vocab-list-item">{processedChildren}</li>
+        );
       }
 
-      return <p className="my-4" {...props} />;
+      // For non-array children
+      return <li className="ml-2 mb-1 vocab-list-item">{children}</li>;
     },
 
-    text: ({ children }) => {
-      if (!children || typeof children !== "string" || children.trim() === "") {
-        return children;
-      }
-
-      const processedHtml = processWords(children);
-      return <span dangerouslySetInnerHTML={{ __html: processedHtml }} />;
-    },
-
-    h1: ({ node, ...props }) => (
-      <h1 className="text-3xl font-bold mt-6 mb-4" {...props} />
-    ),
-    h2: ({ node, ...props }) => (
-      <h2 className="text-2xl font-bold mt-5 mb-3" {...props} />
-    ),
-    h3: ({ node, ...props }) => (
-      <h3 className="text-xl font-bold mt-4 mb-2" {...props} />
-    ),
-    h4: ({ node, ...props }) => (
-      <h4 className="text-lg font-bold mt-3 mb-2" {...props} />
-    ),
-    h5: ({ node, ...props }) => (
-      <h5 className="text-base font-bold mt-3 mb-1" {...props} />
-    ),
-    h6: ({ node, ...props }) => (
-      <h6 className="text-sm font-bold mt-3 mb-1" {...props} />
-    ),
-    ul: ({ node, ...props }) => (
-      <ul className="list-disc pl-5 my-4" {...props} />
-    ),
-    ol: ({ node, ...props }) => (
-      <ol className="list-decimal pl-5 my-4" {...props} />
-    ),
-    li: ({ node, ...props }) => <li className="ml-2 mb-1" {...props} />,
     a: ({ node, ...props }) => (
       <a className="text-blue-500 hover:underline" {...props} />
     ),
-    blockquote: ({ node, ...props }) => (
-      <blockquote
-        className="border-l-4 border-gray-200 pl-4 italic my-4"
-        {...props}
-      />
-    ),
+
+    // Enhanced blockquote handling for markdown content
+    blockquote: ({ node, children, ...props }) => {
+      if (!children) {
+        return (
+          <blockquote
+            className="border-l-4 border-gray-200 pl-4 italic my-4 vocab-blockquote"
+            {...props}
+          />
+        );
+      }
+
+      if (typeof children === "string") {
+        const processedContent = processWords(children);
+        return (
+          <blockquote
+            className="border-l-4 border-gray-200 pl-4 italic my-4 vocab-blockquote"
+            dangerouslySetInnerHTML={{ __html: processedContent }}
+          />
+        );
+      }
+
+      // Process complex content using the recursive processor
+      const processedChildren = processReactContent(children);
+      return (
+        <blockquote className="border-l-4 border-gray-200 pl-4 italic my-4 vocab-blockquote">
+          {processedChildren}
+        </blockquote>
+      );
+    },
+
+    // Add special handling for strong and emphasis elements
+    strong: ({ node, children, ...props }) => {
+      if (typeof children === "string") {
+        const processedContent = processWords(children);
+        return (
+          <strong
+            className="font-bold vocab-strong"
+            dangerouslySetInnerHTML={{ __html: processedContent }}
+          />
+        );
+      }
+
+      const processedChildren = processReactContent(children);
+      return (
+        <strong className="font-bold vocab-strong">{processedChildren}</strong>
+      );
+    },
+
+    em: ({ node, children, ...props }) => {
+      if (typeof children === "string") {
+        const processedContent = processWords(children);
+        return (
+          <em
+            className="italic vocab-em"
+            dangerouslySetInnerHTML={{ __html: processedContent }}
+          />
+        );
+      }
+
+      const processedChildren = processReactContent(children);
+      return <em className="italic vocab-em">{processedChildren}</em>;
+    },
+
     code: ({ node, inline, className, children, ...props }) => {
       if (inline || (!className && String(children).indexOf("\n") === -1)) {
         return (
@@ -243,11 +687,39 @@ export const ReadingView = () => {
         </pre>
       );
     },
+
+    // Process text content with additional checks
+    text: ({ node, children }) => {
+      if (!children || typeof children !== "string" || children.trim() === "") {
+        return children;
+      }
+
+      // Add debug logging to see what's being processed
+      if (process.env.NODE_ENV === "development" && debugMode) {
+        console.log("Processing text node:", children);
+      }
+
+      const processedHtml = processWords(children);
+      return (
+        <span
+          className="vocab-text"
+          dangerouslySetInnerHTML={{ __html: processedHtml }}
+        />
+      );
+    },
+
+    // Add support for HTML rendering when needed
+    html: ({ node, ...props }) => {
+      if (node.value && typeof node.value === "string") {
+        return <div dangerouslySetInnerHTML={{ __html: node.value }} />;
+      }
+      return null;
+    },
   };
 
   const refreshVocabulary = async () => {
     console.log("Refreshing vocabulary from API...");
-    const freshVocabulary = await window.electronAPI.getVocabulary();
+    const freshVocabulary = await window.electronAPI.getAllVocabulary();
     console.log(`Loaded ${freshVocabulary.length} vocab words`);
 
     setVocabulary(freshVocabulary);
@@ -275,8 +747,31 @@ export const ReadingView = () => {
       const savedWord = await window.electronAPI.saveWord(wordData);
       console.log(`Word saved: "${word}" with level: ${level}`);
 
-      await refreshVocabulary();
+      // Update the vocabulary in memory immediately to reflect the new level
+      setVocabulary((prevVocab) => {
+        const updatedVocab = [...prevVocab];
+        const existingWordIndex = updatedVocab.findIndex(
+          (v) => v.word && v.word.toLowerCase() === word.toLowerCase()
+        );
 
+        if (existingWordIndex >= 0) {
+          // Update existing word's level
+          updatedVocab[existingWordIndex] = {
+            ...updatedVocab[existingWordIndex],
+            level,
+          };
+        } else {
+          // Add new word to vocabulary
+          updatedVocab.push(wordData);
+        }
+
+        return updatedVocab;
+      });
+
+      // Force re-render after updating vocabulary
+      setForceUpdateKey(Date.now());
+
+      // Close the popup
       setSelectedWord(null);
     } catch (error) {
       console.error("Error saving word:", error);
@@ -315,6 +810,16 @@ export const ReadingView = () => {
             className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm"
           >
             Log Vocabulary
+          </button>
+          <button
+            onClick={() => setDebugMode((prev) => !prev)}
+            className={`px-3 py-1 ${
+              debugMode
+                ? "bg-red-200 hover:bg-red-300"
+                : "bg-gray-200 hover:bg-gray-300"
+            } rounded text-sm`}
+          >
+            {debugMode ? "Disable Debug" : "Enable Debug"}
           </button>
         </div>
       </div>
@@ -371,7 +876,12 @@ export const ReadingView = () => {
             Last updated: {new Date(reading.updatedAt).toLocaleDateString()}
           </p>
 
-          <div className="prose max-w-none text-content" ref={contentRef}>
+          <div
+            className={`prose max-w-none text-content reading-content ${
+              debugMode ? "debug-mode" : ""
+            }`}
+            ref={contentRef}
+          >
             <ReactMarkdown
               components={customRenderers}
               key={`markdown-${readingId}-${forceUpdateKey}`}
@@ -384,6 +894,60 @@ export const ReadingView = () => {
         </div>
       </div>
 
+      <style jsx="true">{`
+        .reading-content .vocab-word {
+          position: relative;
+          z-index: 1;
+          transition: background-color 0.2s;
+        }
+        .reading-content .vocab-word:hover {
+          text-decoration: underline;
+        }
+        /* Make sure hovering over a list item only affects the specific word being hovered */
+        .reading-content li:hover {
+          text-decoration: none;
+        }
+        .reading-content li .vocab-word:hover {
+          text-decoration: underline;
+        }
+        /* Similar fix for other container elements */
+        .reading-content p:hover,
+        .reading-content h1:hover,
+        .reading-content h2:hover,
+        .reading-content h3:hover,
+        .reading-content h4:hover,
+        .reading-content h5:hover,
+        .reading-content h6:hover,
+        .reading-content blockquote:hover {
+          text-decoration: none;
+        }
+        .debug-mode .vocab-paragraph {
+          outline: 1px solid green;
+        }
+        .debug-mode .vocab-text {
+          outline: 1px dotted red;
+        }
+        .debug-mode .vocab-list-item {
+          outline: 1px solid purple;
+        }
+        .debug-mode .vocab-heading {
+          outline: 2px solid blue;
+        }
+        .debug-mode .vocab-ul,
+        .debug-mode .vocab-ol {
+          outline: 1px dashed brown;
+        }
+        .debug-mode .vocab-blockquote {
+          outline: 2px dotted teal;
+        }
+        .debug-mode .vocab-strong {
+          outline: 1px solid darkred;
+        }
+        .debug-mode .vocab-em {
+          outline: 1px solid darkblue;
+        }
+      `}</style>
+
       {selectedWord && (
         <WordPopup
           word={selectedWord}
@@ -394,3 +958,5 @@ export const ReadingView = () => {
     </div>
   );
 };
+
+export default ReadingView;
