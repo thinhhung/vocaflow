@@ -190,7 +190,7 @@ const VocabularyDashboard = () => {
   const untrackedCount = vocabulary.filter((w) => !w.level).length;
   const hardCount = vocabulary.filter((w) => w.level === "hard").length;
   const familiarCount = vocabulary.filter((w) => w.level === "familiar").length;
-  const knownCount = vocabulary.filter((w) => w.level === "known").length;
+  const learnedCount = vocabulary.filter((w) => w.level === "learned").length;
 
   return (
     <div className="container mx-auto p-4">
@@ -235,14 +235,14 @@ const VocabularyDashboard = () => {
             Familiar ({familiarCount})
           </button>
           <button
-            onClick={() => setLevelFilter("known")}
+            onClick={() => setLevelFilter("learned")}
             className={`px-3 py-1 rounded ${
-              levelFilter === "known"
+              levelFilter === "learned"
                 ? "bg-green-600 text-white"
                 : "bg-green-100"
             }`}
           >
-            Known ({knownCount})
+            Learned ({learnedCount})
           </button>
         </div>
 
@@ -273,10 +273,10 @@ const VocabularyDashboard = () => {
             Mark Familiar
           </button>
           <button
-            onClick={() => handleBulkChange("known")}
+            onClick={() => handleBulkChange("learned")}
             className="px-3 py-1 mr-2 bg-green-500 text-white rounded"
           >
-            Mark Known
+            Mark Learned
           </button>
           <button
             onClick={handleBulkDelete}
@@ -359,7 +359,7 @@ const VocabularyDashboard = () => {
                           ? "px-2 py-1 bg-red-100 text-red-800 rounded-full text-sm"
                           : word.level === "familiar"
                           ? "px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-sm"
-                          : word.level === "known"
+                          : word.level === "learned"
                           ? "px-2 py-1 bg-green-100 text-green-800 rounded-full text-sm"
                           : "px-2 py-1 bg-gray-100 text-gray-800 rounded-full text-sm"
                       }

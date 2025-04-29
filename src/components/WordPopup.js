@@ -128,10 +128,10 @@ const WordPopup = ({ word, onClose, onSave }) => {
                 Familiar
               </button>
               <button
-                onClick={() => onSave(word, "known")}
+                onClick={() => onSave(word, "learned")}
                 className="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded font-medium"
               >
-                Known
+                Learned
               </button>
             </div>
           </>

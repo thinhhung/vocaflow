@@ -348,7 +348,7 @@ const ReadingView = () => {
               style =
                 "background-color:#ffedd5;color:#9a3412;padding:0 2px;border-radius:3px;cursor:pointer;display:inline-block;";
             } else {
-              // Known and untracked words have no special styling
+              // Learned and untracked words have no special styling
               style = "cursor:pointer;display:inline-block;";
             }
 
@@ -386,7 +386,7 @@ const ReadingView = () => {
           style =
             "background-color:#ffedd5;color:#9a3412;padding:0 2px;border-radius:3px;cursor:pointer;display:inline-block;";
         } else {
-          // Known and untracked words have no special styling
+          // Learned and untracked words have no special styling
           style = "cursor:pointer;display:inline-block;";
         }
 
